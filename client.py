@@ -3,6 +3,8 @@ import json
 import time
 import datetime
 
+token = None
+
 def post_data(endpoint, data, headers=None):
     response = requests.post(endpoint, data=data, headers=headers)
 
@@ -12,8 +14,25 @@ def post_data(endpoint, data, headers=None):
     return response
 
 
-def get_data(endpoint, params={}, headers=None):
-    response = requests.get(endpoint, params=params, headers=headers)
+def get_auth_token(auth_info):
+    print("get_auth_token")
+    response = post_data(auth_info["url"], auth_info["data"])
+    return get_data_field(response, auth_info["token_field"])
+
+
+def get_data(endpoint, auth_info, params={}, headers=None):
+    print("get_data")
+    global token
+    if token == None:
+        token = get_auth_token(auth_info)
+    headers = {'Authorization': 'Bearer {}'.format(token)}
+    response = requests.get(endpoint, params=params, headers=headers)        
+    
+    if response.status_code == 401:
+        # token expired, refresh token and retry
+        print("token expired")
+        token = None
+        return get_data(endpoint, auth_info, params=params, headers=headers)
 
     if response.status_code != 200:
         print(response)
@@ -34,28 +53,26 @@ def get_data_field(response, data_field=None):
     
     return data
 
-def get_auth_token(url, token_field, data={}):
-    response = post_data(url, data)
 
-    return get_data_field(response, token_field)
-
-
-def get_paged_results(url, page_param_name, page=1, data_field=None, params={}, headers=None):
+def get_paged_results(url, auth_info, page_param_name, page=1, data_field=None, params={}, headers=None):
     results = []
+
     while True:
         params[page_param_name] = page
         print(params)
-        response = get_data(url, params=params, headers=headers)
+        response = get_data(url, auth_info, params=params, headers=headers)
         data = get_data_field(response, data_field)
         results = results + data
         page = page + 1
+
+        time.sleep(4)
 
         if len(data) == 0:
             break
 
     return results
 
-def get_paged_results_by_date(url, date_from_param_name, date_to_param_name, date_from, date_to, minutes_span=10, data_field=None, params={}, headers=None):
+def get_paged_results_by_date(url, auth_info, date_from_param_name, date_to_param_name, date_from, date_to, minutes_span=10, data_field=None, params={}, headers=None):
     results = []
     time_delta = datetime.timedelta(minutes=minutes_span)
     partial_date_to = date_from
@@ -69,10 +86,12 @@ def get_paged_results_by_date(url, date_from_param_name, date_to_param_name, dat
         params[date_to_param_name] = partial_date_to.strftime("%m/%d/%Y, %H:%M:%S")
         print(params)
 
-        response = get_data(url, params=params, headers=headers)
+        response = get_data(url, auth_info, params=params, headers=headers)
         data = get_data_field(response, data_field)
         results = results + data
         
+        time.sleep(4)
+
         if partial_date_to >= date_to:
             break
 
@@ -81,19 +100,17 @@ def get_paged_results_by_date(url, date_from_param_name, date_to_param_name, dat
     
 
 if __name__=="__main__":
-    # Get auth token
-    data = {
-        "username": "test",
-        "password": "test"
+    # Init auth info
+    auth_info = {
+        "url": "http://localhost:4000/users/authenticate",
+        "data": {
+            "username": "test",
+            "password": "test"
+        },
+        "token_field": "token",
     }
 
-    token = get_auth_token("http://localhost:4000/users/authenticate", "token", data=data)
-
-    print(token)
-
     # time.sleep(30)
-
-    headers = {'Authorization': 'Bearer {}'.format(token)}
 
     # Get users paged by page and pageSize
     params = {
@@ -101,19 +118,19 @@ if __name__=="__main__":
         "pageSize": 10
     }
 
-    response = get_paged_results("http://localhost:4000/users", "page", params=params, headers=headers)
+    response = get_paged_results("http://localhost:4000/users", auth_info, "page", params=params)
     
     print(response)
 
     # Get users paged by createdDate (params from and to)
-    # today = datetime.datetime.now()
-    # delta = datetime.timedelta(minutes=60)
-    # date_from = today - delta 
-    # date_to = today
+    today = datetime.datetime.now()
+    delta = datetime.timedelta(minutes=60)
+    date_from = today - delta 
+    date_to = today
 
-    # response = get_paged_results_by_date("http://localhost:4000/users", "from", "to", date_from, date_to, minutes_span=20, headers=headers)
+    response = get_paged_results_by_date("http://localhost:4000/users", auth_info, "from", "to", date_from, date_to, minutes_span=20)
 
-    # print(response)
+    print(response)
 
 
 
