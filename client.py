@@ -5,42 +5,7 @@ import datetime
 
 token = None
 
-def post_data(endpoint, data, headers=None):
-    response = requests.post(endpoint, data=data, headers=headers)
-
-    if response.status_code != 200:
-        print(response)
-    
-    return response
-
-
-def get_auth_token(auth_info):
-    print("get_auth_token")
-    response = post_data(auth_info["url"], auth_info["data"])
-    return get_data_field(response, auth_info["token_field"])
-
-
-def get_data(endpoint, auth_info, params={}, headers=None):
-    print("get_data")
-    global token
-    if token == None:
-        token = get_auth_token(auth_info)
-    headers = {'Authorization': 'Bearer {}'.format(token)}
-    response = requests.get(endpoint, params=params, headers=headers)        
-    
-    if response.status_code == 401:
-        # token expired, refresh token and retry
-        print("token expired")
-        token = None
-        return get_data(endpoint, auth_info, params=params, headers=headers)
-
-    if response.status_code != 200:
-        print(response)
-    
-    return response
-
-
-def get_data_field(response, data_field=None):
+def get_response_field(response, data_field=None):
     data = response.json()
 
     if not data_field:
@@ -54,14 +19,63 @@ def get_data_field(response, data_field=None):
     return data
 
 
-def get_paged_results(url, auth_info, page_param_name, page=1, data_field=None, params={}, headers=None):
+def get_auth_token(auth_info):
+    print("get_auth_token")
+    response = requests.post(auth_info["url"], data=auth_info["data"])
+
+    if response.status_code != 200:
+        print(response)
+    
+    return get_response_field(response, auth_info["token_field"])
+
+
+def post_data(endpoint, data, headers={}, retry_get_auth_token=True):
+    print("post_data")
+    global token
+    if token == None:
+        token = get_auth_token(auth_info)
+    headers["Authorization"] = 'Bearer {}'.format(token)
+    response = requests.post(endpoint, data=data, headers=headers)
+
+    if response.status_code == 401 and retry_get_auth_token:
+        # token expired, refresh token and retry
+        print("token expired")
+        token = None
+        return post_data(endpoint, auth_info, params=params, headers=headers, retry_get_auth_token=False)
+
+    if response.status_code != 200:
+        print(response)
+    
+    return response
+
+def get_data(endpoint, auth_info, params={}, headers={}, retry_get_auth_token=True):
+    print("get_data")
+    global token
+    if token == None:
+        token = get_auth_token(auth_info)
+    headers["Authorization"] = 'Bearer {}'.format(token)
+    response = requests.get(endpoint, params=params, headers=headers)        
+    
+    if response.status_code == 401 and retry_get_auth_token:
+        # token expired, refresh token and retry
+        print("token expired")
+        token = None
+        return get_data(endpoint, auth_info, params=params, headers=headers, retry_get_auth_token=False)
+
+    if response.status_code != 200:
+        print(response)
+    
+    return response
+
+
+def get_paged_results(url, auth_info, page_param_name, page=1, data_field=None, params={}, headers={}):
     results = []
 
     while True:
         params[page_param_name] = page
         print(params)
         response = get_data(url, auth_info, params=params, headers=headers)
-        data = get_data_field(response, data_field)
+        data = get_response_field(response, data_field)
         results = results + data
         page = page + 1
 
@@ -72,7 +86,7 @@ def get_paged_results(url, auth_info, page_param_name, page=1, data_field=None, 
 
     return results
 
-def get_paged_results_by_date(url, auth_info, date_from_param_name, date_to_param_name, date_from, date_to, minutes_span=10, data_field=None, params={}, headers=None):
+def get_paged_results_by_date(url, auth_info, date_from_param_name, date_to_param_name, date_from, date_to, minutes_span=10, data_field=None, params={}, headers={}):
     results = []
     time_delta = datetime.timedelta(minutes=minutes_span)
     partial_date_to = date_from
@@ -87,7 +101,7 @@ def get_paged_results_by_date(url, auth_info, date_from_param_name, date_to_para
         print(params)
 
         response = get_data(url, auth_info, params=params, headers=headers)
-        data = get_data_field(response, data_field)
+        data = get_response_field(response, data_field)
         results = results + data
         
         time.sleep(4)
@@ -98,7 +112,6 @@ def get_paged_results_by_date(url, auth_info, date_from_param_name, date_to_para
     return results
 
     
-
 if __name__=="__main__":
     # Init auth info
     auth_info = {
@@ -109,8 +122,6 @@ if __name__=="__main__":
         },
         "token_field": "token",
     }
-
-    # time.sleep(30)
 
     # Get users paged by page and pageSize
     params = {
@@ -130,13 +141,4 @@ if __name__=="__main__":
 
     response = get_paged_results_by_date("http://localhost:4000/users", auth_info, "from", "to", date_from, date_to, minutes_span=20)
 
-    print(response)
-
-
-
-
-# get access token
-# refresh token
-# get paged results
-# write results to CSV
-# get all pages and write CSV or one CSV per page?             
+    print(response)        
