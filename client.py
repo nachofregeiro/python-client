@@ -48,6 +48,7 @@ def post_data(auth_info, url, data, headers={}, retry_get_auth_token=True):
     
     return response
 
+
 def get_data(auth_info, url, params={}, headers={}, retry_get_auth_token=True):
     print("get_data")
     global token
@@ -85,6 +86,7 @@ def get_paged_results(auth_info, url, page_param_name, page=1, data_field=None, 
             break
 
     return results
+
 
 def get_paged_results_by_date(auth_info, url, date_from_param_name, date_to_param_name, date_from, date_to, minutes_span=10, data_field=None, params={}, headers={}):
     results = []
